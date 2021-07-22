@@ -1,4 +1,4 @@
-# Announcer App
+# Announcer App for Slack
 
 
 ### Make announcements across channels - With an Edit button
