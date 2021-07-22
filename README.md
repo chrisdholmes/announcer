@@ -13,5 +13,7 @@ This applications uses the Slack Bolt Framework and is hosted on Glitch.
 
 ![](announcement_gif.gif)
 
+Only the announcements created by the original user are able to edit particular announcements.
+
 
  
