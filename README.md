@@ -12,7 +12,7 @@ choose to edit one of those messages and all the channels where that messages wa
 
 ### Create Announcement Modal
 
-![announcement_gif](https://i.ibb.co/f2JpH5t/C5393-DD7-B542-419-B-A432-8-D5-F1-BFDC768.gif)
+![](announcement_gif.gif)
 
 
  
