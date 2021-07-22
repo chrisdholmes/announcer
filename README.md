@@ -7,8 +7,7 @@ The Announcer App is a Slack App written using the Bolt framework. Bolt is amazi
 pretty simple. The user can create an announcement and send a message across multiple channels. The user can also
 choose to edit one of those messages and all the channels where that messages was sent will also update. 
 
-### Home Page
-![home page](https://i.ibb.co/r3BtFpc/Snag-4cf535c.png)
+This applications uses the Slack Bolt Framework and is hosted on Glitch. 
 
 ### Create Announcement Modal
 
