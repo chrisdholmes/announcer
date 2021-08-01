@@ -5,41 +5,29 @@
  update that message from any message in any channel that message was placed.
  
  Possible Future Features
-  - Delete The Messages and all accompanying messages
+  - Delete The Messages and all accompanying messages?
+  
+  
+  TODO
+  
+  Determine tests and handling error messages
+  send ephemeral messages when the user does not have the authority to edit the message
+  explore the as_user option - maybe announcements can come from user if they want it to?
+  
   
 
 */
 
 //uuid is used to generate unique ids for each announcement sent
-const { v4: uuidv4 } = require("uuid");
 
 //storage is used to store each announcement
 const storage = require("node-persist");
 const fetch = require("node-fetch");
 const modals = require("./modals.js");
 const { App } = require("@slack/bolt");
-
-class Announcement {
-  constructor(shared_msg_id, user_id, text, channel, ts) {
-    this.shared_msg_id = shared_msg_id;
-    this.user_id = user_id;
-    this.text = text;
-    this.channel = channel;
-    this.ts = ts;
-  }
-}
-
-// App begins here 
-(async () => {
-  await storage.init();
-  
-  // app is the Slack App and it starts up here
-  await app.start(process.env.PORT || 3000);
-  console.log("⚡️ Bolt app is running!");
-  
-})();
-
-
+const db = require("./db-ops.js");
+const { v4: uuidv4 } = require("uuid");
+const viewui = require("./view-ui.js");
 
 //initialize the Slack App
 const app = new App({
@@ -49,17 +37,19 @@ const app = new App({
   appToken: process.env.SLACK_SOCKET_TOKEN
 });
 
+// App begins here
+(async () => {
+  await storage.init();
 
-// HOME 
+  // app is the Slack App and it starts up here
+  await app.start(process.env.PORT || 3000);
+  console.log("⚡️ Bolt app is running!");
+})();
+
+// HOME
 app.event("app_home_opened", async ({ event, client }) => {
-  try {
-    // get homeModal from method in modals module
-    var homeModal = modals.home(event.user);
 
-    const result = await client.views.publish(homeModal);
-  } catch (error) {
-    console.error(error);
-  }
+  viewui.homeView(event.user, client);
 });
 
 // When channels are selected in the announcement modal
@@ -69,16 +59,17 @@ app.action("channels_selected", async ({ body, ack, say }) => {
     body.view.state.values["channels_block"]["channels_selected"][
       "selected_conversations"
     ];
-  
-  
-  // store the channels selected in storage so that they can be accessed and sent out
-  await storage.setItem("channels", channels);
-});
 
+  var user_id = body.user.id;
+
+  var key = user_id + ".channels";
+
+  // change to user.id + channels for key
+  await storage.setItem(key, channels);
+});
 
 // Announce button from home event click
 app.action("home_announce_click", async ({ body, ack, say, client }) => {
-
   try {
     await ack();
     const result = await client.views.open({
@@ -90,45 +81,48 @@ app.action("home_announce_click", async ({ body, ack, say, client }) => {
   }
 });
 
-// Announcement View submission 
+// Announcement View submission
 
 /**
   TODO - create async function so that the messages are sent after the 
   or at the same time as the response clear messsage is sent back to Slack.
 */
 app.view("announcement_view", async ({ body, ack, say, client }) => {
- 
   // retrieve channels from storage
-  var channels = await storage.getItem("channels");
-  
+
+  var key = body.user.id + ".channels";
+  var channels = await storage.getItem(key);
+  var shared_msg_id = uuidv4();
+  console.log(shared_msg_id);
+
   //retrieve announcement text from the announcement view modal
-  var announcement =
+  var text =
     body.view.state.values["announcement_block"]["announcement_text"].value;
 
   try {
     await ack();
-    
-    //create unique id for eacha nnouncement
-    var shared_msg_id = uuidv4();
 
-    channels.forEach(channel => {
+    //create unique id for each announcement
+
+    var index = 0;
+    var messages = [];
+
+    await channels.forEach(channel => {
       client.chat
         .postMessage({
           channel: channel,
-          text: announcement
+          text: text
         })
         .then(data => {
-        //initialize a new announcement 
-          var message = new Announcement(
+          //initialize a new announcement
+          // and insert data in to MySQL server
+          db.insertAnnouncement(
             shared_msg_id,
             body.user.id,
-            announcement,
-            data.channel,
+            text,
+            channel,
             data.ts
           );
-          
-         //store announcement so user can update 
-          storage.setItem(data.ts, message);
         })
         .catch(err => console.log("error: " + err));
     });
@@ -142,85 +136,25 @@ app.view("announcement_view", async ({ body, ack, say, client }) => {
   return JSON.stringify({ response_action: "clear" });
 });
 
-
-
-app.shortcut("edit_msg", async ({ shortcut, ack, client }) => {
+app.shortcut("edit_all", async ({ shortcut, ack, client }) => {
   try {
     await ack();
-  
-    //retrieve message from storage based on ts
-    var msg = await storage.getItem(shortcut.message_ts);
-    
-   // if msg not found in storage, undefined, or msg is found but does not long to user
-    
-  // open no permission modal 
-    
-  // else open edit modal
 
-    if (msg == undefined || msg.user_id != shortcut.user.id) {
-      await client.views.open({
-        trigger_id: shortcut.trigger_id,
-        view: modals.noPermissionModal
-      });
-    } else { 
-      const result = await client.views.open(
-        modals.editModal(shortcut.trigger_id, shortcut.message.text)
-      );
-      
-      await storage.setItem("message", msg);
-    }
+    //edit message user check checks database to see if user who posted message is the same as user attempting to edit message
+    //if they are same user will be sent to edit screen - other wise user will be sent an error message modal
+    db.editMessageUserCheck(shortcut, client);
   } catch (error) {
     console.log(error);
   }
 });
 
 app.view("edit_msg_submission", async ({ ack, body, view, client }) => {
-  console.log("body: " + body);
   await ack();
 
   var text = view.state.values["update_text"]["update_value"].value;
-  
+
   //retreive message from storage- message that the user chose to edit
-  var message = await storage.getItem("message");
-
-  
-  try {
-    await ack();
-
-    const result = await client.chat.update({
-      token: process.env.SLACK_BOT_TOKEN,
-      channel: message.channel,
-      ts: message.ts,
-      text: text
-    });
-  } catch (error) {
-    console.log(error);
-  }
-  
-
-  // get all the messages with this message id
-
-  await storage.forEach(o => {
-    if (o.value.shared_msg_id != undefined) {
-      if (
-        o.value.shared_msg_id == message.shared_msg_id &&
-        o.value.user_id == message.user_id
-      ) {
-
-        try {
-          client.chat.update({
-            token: process.env.SLACK_BOT_TOKEN,
-            channel: o.value.channel,
-            ts: o.value.ts,
-            text: text
-          });
-       
-        } catch (error) {
-          console.log(error);
-        }
-      }
-    }
-  });
+  viewui.updateSharedMessages(body.user.id, text, client);
 });
 
 app.shortcut("shortcut_announce", async ({ shortcut, ack, client, body }) => {
@@ -248,3 +182,7 @@ app.shortcut("announce_msg", async ({ shortcut, ack, client, body }) => {
     console.log(error.data.response_metadata);
   }
 });
+
+function resolve(value) {
+  console.log("resolve: " + value);
+}
